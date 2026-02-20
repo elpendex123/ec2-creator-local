@@ -10,7 +10,7 @@ This guide explains the Jenkins pipelines available for building and operating E
 jenkins/
 ├── deployment/
 │   ├── Jenkinsfile              # Build, lint, test, validate pipeline
-│   └── Jenkinsfile.deploy       # Start uvicorn API server
+│   └── Jenkinsfile.manage       # Server management: status, start, stop
 └── aws_cli_jobs/
     ├── Jenkinsfile.create       # Create EC2 instance via API
     ├── Jenkinsfile.list         # List all instances
@@ -42,32 +42,51 @@ jenkins/
 curl -X POST http://jenkins.example.com/job/ec2-creator-build/build
 ```
 
-### 2. Jenkinsfile.deploy (Start API Server)
+### 2. Jenkinsfile.manage (Server Management)
 
-**Purpose:** Start the FastAPI uvicorn server
-
-**Stages:**
-1. Checkout repository
-2. Setup Python environment
-3. Start uvicorn on port 8000
-4. Verify endpoints are responding
+**Purpose:** Manage API server lifecycle with 3 actions via dropdown
 
 **Parameters:**
-- `RELOAD` (boolean, default: false) — Enable auto-reload for development
+- `ACTION` (choice: status, start, stop) — Select server action
+
+#### Status Action
+Check server health and status:
+- Show if process is running
+- Test health endpoint
+- Show port listener status
+- Display recent logs
 
 **Example:**
 ```bash
-# Start without auto-reload:
-curl -X POST http://jenkins.example.com/job/ec2-creator-deploy/build
+curl -X POST http://jenkins.example.com/job/ec2-server-manage/buildWithParameters?ACTION=status
+```
 
-# Start with auto-reload:
-curl -X POST http://jenkins.example.com/job/ec2-creator-deploy/buildWithParameters?RELOAD=true
+#### Start Action
+Start the API server (assumes build job already ran):
+- Activate existing venv
+- Start uvicorn on port 8000
+- Verify server started and responds to health check
+
+**Example:**
+```bash
+curl -X POST http://jenkins.example.com/job/ec2-server-manage/buildWithParameters?ACTION=start
 ```
 
 **Output:**
 - API available at `http://localhost:8000`
 - Swagger docs at `http://localhost:8000/docs`
 - Health check at `http://localhost:8000/health`
+
+#### Stop Action
+Stop the running API server gracefully:
+- Send SIGTERM to uvicorn
+- Fall back to SIGKILL if needed
+- Verify server stopped and port freed
+
+**Example:**
+```bash
+curl -X POST http://jenkins.example.com/job/ec2-server-manage/buildWithParameters?ACTION=stop
+```
 
 ---
 
@@ -201,17 +220,22 @@ curl -X POST http://jenkins.example.com/job/ec2-destroy-instance/buildWithParame
 8. **Script Path:** `jenkins/deployment/Jenkinsfile`
 9. Save
 
-### 2. Create Deploy Job
+### 2. Create Server Management Job
 
 1. Jenkins → New Item
-2. **Job name:** `ec2-creator-deploy`
+2. **Job name:** `ec2-server-manage`
 3. **Type:** Pipeline
 4. **Pipeline → Definition:** Pipeline script from SCM
 5. **SCM:** Git
 6. **Repository URL:** `https://github.com/elpendex123/ec2-creator-local.git`
 7. **Branch:** `*/main`
-8. **Script Path:** `jenkins/deployment/Jenkinsfile.deploy`
+8. **Script Path:** `jenkins/deployment/Jenkinsfile.manage`
 9. Save
+
+**Note:** When you run this job, you'll get a dropdown to choose:
+- `status` - Check server health
+- `start` - Start API server
+- `stop` - Stop API server
 
 ### 3. Create EC2 Operation Jobs
 
@@ -234,18 +258,25 @@ Repeat for each operation (create, list, start, stop, destroy):
 ### 1. Build and Test
 
 ```bash
-# Run build pipeline to lint, test, validate
+# Run build pipeline to lint, test, validate (creates venv)
 curl -X POST http://jenkins/job/ec2-creator-build/build
 ```
 
-### 2. Deploy API
+### 2. Check Server Status
+
+```bash
+# Check if API server is running
+curl -X POST http://jenkins/job/ec2-server-manage/buildWithParameters?ACTION=status
+```
+
+### 3. Start API Server
 
 ```bash
 # Start the API server
-curl -X POST http://jenkins/job/ec2-creator-deploy/build
+curl -X POST http://jenkins/job/ec2-server-manage/buildWithParameters?ACTION=start
 ```
 
-### 3. Create Instance
+### 4. Create EC2 Instance
 
 ```bash
 # Create a new instance
@@ -253,34 +284,41 @@ curl -X POST http://jenkins/job/ec2-create-instance/buildWithParameters \
   -d "INSTANCE_NAME=my-server&INSTANCE_TYPE=t3.micro&STORAGE_GB=8"
 ```
 
-### 4. Check Instance
+### 5. List Instances
 
 ```bash
 # List all instances
 curl -X POST http://jenkins/job/ec2-list-instances/build
 ```
 
-### 5. SSH to Instance
+### 6. SSH to Instance
 
 ```bash
 # Get public IP from Jenkins job output
 ssh -i ~/.ssh/my_ec2_keypair.pem ec2-user@<PUBLIC_IP>
 ```
 
-### 6. Manage Instance
+### 7. Manage EC2 Instances
 
 ```bash
-# Stop instance
+# Stop EC2 instance
 curl -X POST http://jenkins/job/ec2-stop-instance/buildWithParameters \
   -d "INSTANCE_ID=i-xxxxx"
 
-# Start instance
+# Start EC2 instance
 curl -X POST http://jenkins/job/ec2-start-instance/buildWithParameters \
   -d "INSTANCE_ID=i-xxxxx"
 
-# Destroy instance
+# Destroy EC2 instance
 curl -X POST http://jenkins/job/ec2-destroy-instance/buildWithParameters \
   -d "INSTANCE_ID=i-xxxxx&CONFIRM=true"
+```
+
+### 8. Stop API Server
+
+```bash
+# Stop the API server when done
+curl -X POST http://jenkins/job/ec2-server-manage/buildWithParameters?ACTION=stop
 ```
 
 ---
