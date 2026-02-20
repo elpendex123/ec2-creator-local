@@ -37,11 +37,8 @@ async def create_instance(
             ),
         )
 
-    # Get backend
-    try:
-        service = get_backend(backend)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    # Get backend (AWS CLI only)
+    service = get_backend()
 
     # Create instance
     try:
