@@ -1,0 +1,244 @@
+pipeline {
+    agent any
+
+    environment {
+        VENV_DIR = '.venv'
+        APP_PORT = '8000'
+        APP_HOST = '0.0.0.0'
+        UVICORN_LOG = '/tmp/uvicorn.log'
+    }
+
+    parameters {
+        choice(
+            name: 'ACTION',
+            choices: [
+                'status',
+                'start',
+                'stop'
+            ],
+            description: 'Select server action: status (check health), start (run server), or stop (kill server)'
+        )
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Status') {
+            when {
+                expression { params.ACTION == 'status' }
+            }
+            steps {
+                script {
+                    sh '''
+                        echo "=================================================="
+                        echo "API Server Status Check"
+                        echo "=================================================="
+                        echo ""
+
+                        # Check if process is running
+                        echo "1. Checking if uvicorn process is running..."
+                        if pgrep -f "uvicorn app.main" > /dev/null; then
+                            echo "   ✓ Process is RUNNING"
+                            echo ""
+                            echo "   PID and details:"
+                            ps aux | grep "uvicorn app.main" | grep -v grep
+                        else
+                            echo "   ✗ Process is NOT RUNNING"
+                        fi
+
+                        echo ""
+                        echo "2. Testing health endpoint..."
+                        if curl -s -m 2 http://localhost:${APP_PORT}/health > /dev/null 2>&1; then
+                            echo "   ✓ API is responding"
+                            HEALTH=$(curl -s http://localhost:${APP_PORT}/health)
+                            echo "   Response: $HEALTH"
+                        else
+                            echo "   ✗ API is NOT responding (connection refused or timeout)"
+                        fi
+
+                        echo ""
+                        echo "3. Port ${APP_PORT} listener status:"
+                        if netstat -tlnp 2>/dev/null | grep :${APP_PORT} > /dev/null; then
+                            echo "   ✓ Port ${APP_PORT} is LISTENING"
+                            netstat -tlnp 2>/dev/null | grep :${APP_PORT}
+                        else
+                            echo "   ✗ Port ${APP_PORT} is NOT listening"
+                        fi
+
+                        echo ""
+                        echo "4. Recent log entries (last 20 lines):"
+                        if [ -f "${UVICORN_LOG}" ]; then
+                            tail -20 ${UVICORN_LOG}
+                        else
+                            echo "   No log file found at ${UVICORN_LOG}"
+                        fi
+
+                        echo ""
+                        echo "=================================================="
+                    '''
+                }
+            }
+        }
+
+        stage('Start') {
+            when {
+                expression { params.ACTION == 'start' }
+            }
+            steps {
+                script {
+                    sh '''
+                        echo "=================================================="
+                        echo "Starting API Server"
+                        echo "=================================================="
+                        echo ""
+
+                        # Check if already running
+                        if pgrep -f "uvicorn app.main" > /dev/null; then
+                            echo "✗ Server is already running!"
+                            echo ""
+                            pgrep -f "uvicorn app.main"
+                            echo ""
+                            echo "Use 'stop' action to stop it first, or use 'status' to check"
+                            exit 1
+                        fi
+
+                        # Setup Python environment
+                        echo "Setting up Python environment..."
+                        if [ ! -d "${VENV_DIR}" ]; then
+                            echo "Creating new venv..."
+                            python3 -m venv ${VENV_DIR}
+                        else
+                            echo "Using existing venv"
+                        fi
+
+                        . ${VENV_DIR}/bin/activate
+                        pip install --upgrade pip --quiet
+                        pip install -r requirements.txt --quiet
+
+                        echo "✓ Environment ready"
+                        echo ""
+
+                        # Start the server
+                        echo "Starting uvicorn on ${APP_HOST}:${APP_PORT}..."
+                        nohup python3 -m uvicorn app.main:app \
+                            --host ${APP_HOST} \
+                            --port ${APP_PORT} > ${UVICORN_LOG} 2>&1 &
+
+                        # Wait and verify
+                        sleep 3
+
+                        if pgrep -f "uvicorn app.main" > /dev/null; then
+                            echo "✓ Server started successfully!"
+                            echo ""
+                            PID=$(pgrep -f "uvicorn app.main")
+                            echo "PID: $PID"
+                            echo ""
+
+                            # Test health endpoint
+                            sleep 1
+                            if curl -s http://localhost:${APP_PORT}/health > /dev/null 2>&1; then
+                                HEALTH=$(curl -s http://localhost:${APP_PORT}/health)
+                                echo "✓ Health check: $HEALTH"
+                            else
+                                echo "⚠ Server started but health check not responding yet"
+                            fi
+                        else
+                            echo "✗ Failed to start server"
+                            echo ""
+                            echo "Log output:"
+                            tail -20 ${UVICORN_LOG}
+                            exit 1
+                        fi
+
+                        echo ""
+                        echo "API is running at http://localhost:${APP_PORT}"
+                        echo "Swagger docs at http://localhost:${APP_PORT}/docs"
+                        echo "=================================================="
+                    '''
+                }
+            }
+        }
+
+        stage('Stop') {
+            when {
+                expression { params.ACTION == 'stop' }
+            }
+            steps {
+                script {
+                    sh '''
+                        echo "=================================================="
+                        echo "Stopping API Server"
+                        echo "=================================================="
+                        echo ""
+
+                        # Check if running
+                        if ! pgrep -f "uvicorn app.main" > /dev/null; then
+                            echo "✓ Server is not running"
+                            exit 0
+                        fi
+
+                        echo "Found running server processes:"
+                        pgrep -f "uvicorn app.main"
+                        echo ""
+
+                        # Kill gracefully first (SIGTERM)
+                        echo "Sending SIGTERM to uvicorn processes..."
+                        pkill -f "uvicorn app.main" -15
+
+                        # Wait a moment
+                        sleep 2
+
+                        # Check if still running
+                        if pgrep -f "uvicorn app.main" > /dev/null; then
+                            echo "Process still running, sending SIGKILL..."
+                            pkill -f "uvicorn app.main" -9
+                            sleep 1
+                        fi
+
+                        # Verify it's stopped
+                        if pgrep -f "uvicorn app.main" > /dev/null; then
+                            echo "✗ Failed to stop server"
+                            exit 1
+                        else
+                            echo "✓ Server stopped successfully"
+                            echo ""
+                            echo "Checking port ${APP_PORT}..."
+                            if netstat -tlnp 2>/dev/null | grep :${APP_PORT} > /dev/null; then
+                                echo "⚠ Port still in use (may take a moment to release)"
+                            else
+                                echo "✓ Port ${APP_PORT} is now free"
+                            fi
+                        fi
+
+                        echo ""
+                        echo "=================================================="
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                sh '''
+                    echo ""
+                    echo "Action completed: ${ACTION}"
+                    echo "Timestamp: $(date)"
+                '''
+            }
+        }
+
+        failure {
+            echo "❌ Server management action failed. Check logs above."
+        }
+
+        success {
+            echo "✅ Server management action completed successfully."
+        }
+    }
+}
