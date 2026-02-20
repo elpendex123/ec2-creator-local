@@ -126,7 +126,7 @@ pipeline {
 
                         # Start the server using helper script with setsid for proper detachment
                         echo "Starting uvicorn on ${APP_HOST}:${APP_PORT}..."
-                        "${BUILD_WORKSPACE}/aws_cli_bash_scripts/start_server.sh" \
+                        ./aws_cli_bash_scripts/start_server.sh \
                             "${BUILD_WORKSPACE}" \
                             "${BUILD_VENV}" \
                             "${APP_HOST}" \
