@@ -18,7 +18,7 @@ source "$VENV/bin/activate"
 
 # Start uvicorn completely detached using setsid
 # setsid creates a new session, completely detaching from parent shell
-exec setsid -f python3 -m uvicorn app.main:app \
+setsid -f python3 -m uvicorn app.main:app \
     --host "$HOST" \
     --port "$PORT" \
     >> "$LOG_FILE" 2>&1
