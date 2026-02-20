@@ -1,24 +1,8 @@
 #!/bin/bash
-# Start uvicorn server with proper process detachment
-# Usage: ./start_server.sh <workspace_dir> <venv_dir> <host> <port> <log_file>
+# This script is kept for backwards compatibility
+# The start_server.sh functionality is now inlined in Jenkinsfile.manage
+# to avoid issues with process group management in Jenkins.
 
-set -euo pipefail
-
-WORKSPACE="$1"
-VENV="$2"
-HOST="$3"
-PORT="$4"
-LOG_FILE="$5"
-
-# Change to workspace
-cd "$WORKSPACE"
-
-# Activate venv
-source "$VENV/bin/activate"
-
-# Start uvicorn completely detached using setsid
-# setsid creates a new session, completely detaching from parent shell
-setsid -f python3 -m uvicorn app.main:app \
-    --host "$HOST" \
-    --port "$PORT" \
-    >> "$LOG_FILE" 2>&1
+echo "ERROR: start_server.sh should not be called directly"
+echo "The functionality has been moved to Jenkinsfile.manage"
+exit 1
