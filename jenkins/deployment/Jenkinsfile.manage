@@ -110,16 +110,19 @@ pipeline {
                             exit 1
                         fi
 
-                        # Activate venv (assumes build job already created and installed dependencies)
+                        # Activate venv from build job workspace
                         echo "Activating Python environment..."
-                        if [ ! -d "${VENV_DIR}" ]; then
-                            echo "✗ ERROR: venv not found at ${VENV_DIR}"
+                        BUILD_WORKSPACE="/var/lib/jenkins/workspace/EC2-Creator-Local/Build-App"
+                        BUILD_VENV="${BUILD_WORKSPACE}/.venv"
+
+                        if [ ! -d "${BUILD_VENV}" ]; then
+                            echo "✗ ERROR: venv not found at ${BUILD_VENV}"
                             echo "Please run the Build job first to create venv and install dependencies"
                             exit 1
                         fi
 
-                        . ${VENV_DIR}/bin/activate
-                        echo "✓ Environment activated"
+                        . ${BUILD_VENV}/bin/activate
+                        echo "✓ Environment activated from build workspace"
                         echo ""
 
                         # Start the server
