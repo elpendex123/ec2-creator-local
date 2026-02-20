@@ -121,6 +121,7 @@ pipeline {
                             exit 1
                         fi
 
+                        cd "${BUILD_WORKSPACE}"
                         . ${BUILD_VENV}/bin/activate
                         echo "✓ Environment activated from build workspace"
                         echo ""
@@ -130,6 +131,9 @@ pipeline {
                         nohup python3 -m uvicorn app.main:app \
                             --host ${APP_HOST} \
                             --port ${APP_PORT} > ${UVICORN_LOG} 2>&1 &
+
+                        # Disown the process so it survives shell exit
+                        disown -a
 
                         # Wait and verify
                         sleep 3
