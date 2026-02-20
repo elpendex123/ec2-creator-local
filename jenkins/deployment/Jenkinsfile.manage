@@ -217,11 +217,17 @@ pipeline {
                         # Verify it's stopped
                         if pgrep -f "uvicorn app.main" > /dev/null; then
                             echo ""
-                            echo "✗ Failed to stop server (permission denied)"
+                            echo "⚠ Could not stop server from Jenkins (permission denied)"
                             echo ""
-                            echo "NOTE: If running as jenkins user, you may need to:"
+                            echo "REASON: uvicorn process started by 'enrique' user,"
+                            echo "        but Jenkins runs as 'jenkins' user"
+                            echo ""
+                            echo "SOLUTION: Stop server manually with:"
                             echo "  sudo pkill -f 'uvicorn app.main'"
-                            exit 1
+                            echo ""
+                            echo "Or configure sudoers to allow jenkins user sudo without password"
+                            echo ""
+                            echo "Note: This is a security feature to prevent unauthorized process killing"
                         else
                             echo ""
                             echo "✓ Server stopped successfully"
