@@ -56,6 +56,10 @@ pipeline {
                             echo "   ✓ API is responding"
                             HEALTH=$(curl -s http://localhost:${APP_PORT}/health)
                             echo "   Response: $HEALTH"
+                            echo ""
+                            echo "╔════════════════════════════════════════════════╗"
+                            echo "║  ✅ SERVER IS UP AND RUNNING                   ║"
+                            echo "╚════════════════════════════════════════════════╝"
                         else
                             echo "   ✗ API is NOT responding (connection refused or timeout)"
                         fi
@@ -178,28 +182,48 @@ pipeline {
                         fi
 
                         echo "Found running server processes:"
-                        pgrep -f "uvicorn app.main"
+                        PIDS=$(pgrep -f "uvicorn app.main")
+                        echo "$PIDS"
                         echo ""
 
-                        # Kill gracefully first (SIGTERM)
-                        echo "Sending SIGTERM to uvicorn processes..."
-                        pkill -f "uvicorn app.main" -15
+                        # Try to kill with sudo first (for permission issues)
+                        echo "Attempting to stop uvicorn processes..."
+                        for PID in $PIDS; do
+                            echo "  Stopping PID $PID..."
 
-                        # Wait a moment
+                            # Try as current user first
+                            if sudo kill -15 $PID 2>/dev/null || kill -15 $PID 2>/dev/null; then
+                                echo "    ✓ Sent SIGTERM to $PID"
+                            else
+                                echo "    ⚠ Could not send SIGTERM to $PID (permission denied)"
+                            fi
+                        done
+
+                        # Wait a moment for graceful shutdown
                         sleep 2
 
                         # Check if still running
                         if pgrep -f "uvicorn app.main" > /dev/null; then
+                            echo ""
                             echo "Process still running, sending SIGKILL..."
-                            pkill -f "uvicorn app.main" -9
+                            for PID in $PIDS; do
+                                if sudo kill -9 $PID 2>/dev/null || kill -9 $PID 2>/dev/null; then
+                                    echo "  ✓ Sent SIGKILL to $PID"
+                                fi
+                            done
                             sleep 1
                         fi
 
                         # Verify it's stopped
                         if pgrep -f "uvicorn app.main" > /dev/null; then
-                            echo "✗ Failed to stop server"
+                            echo ""
+                            echo "✗ Failed to stop server (permission denied)"
+                            echo ""
+                            echo "NOTE: If running as jenkins user, you may need to:"
+                            echo "  sudo pkill -f 'uvicorn app.main'"
                             exit 1
                         else
+                            echo ""
                             echo "✓ Server stopped successfully"
                             echo ""
                             echo "Checking port ${APP_PORT}..."
