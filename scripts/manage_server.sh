@@ -19,7 +19,7 @@ start_server() {
             return 1
         else
             echo "Removing stale PID file"
-            rm -f "$PID_FILE"
+            rm -f "$PID_FILE" 2>/dev/null || true
         fi
     fi
 
@@ -84,7 +84,7 @@ stop_server() {
         fi
     fi
 
-    rm -f "$PID_FILE"
+    rm -f "$PID_FILE" 2>/dev/null || true
     echo "✓ Server stopped"
     return 0
 }
