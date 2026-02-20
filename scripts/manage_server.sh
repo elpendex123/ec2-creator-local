@@ -26,11 +26,12 @@ start_server() {
     echo "Starting uvicorn server..."
     cd "$BUILD_WORKSPACE"
 
-    # Start the process and capture PID
-    python3 -m uvicorn app.main:app \
+    # Start the process with nohup and proper backgrounding
+    # nohup ensures it survives SIGHUP, < /dev/null disconnects stdin
+    nohup python3 -m uvicorn app.main:app \
         --host "$APP_HOST" \
         --port "$APP_PORT" \
-        > /tmp/uvicorn.log 2>&1 &
+        < /dev/null > /tmp/uvicorn.log 2>&1 &
 
     # Save PID
     echo $! > "$PID_FILE"
@@ -39,7 +40,7 @@ start_server() {
     echo "✓ Server started with PID $PID"
 
     # Wait for startup
-    sleep 2
+    sleep 3
 
     # Verify it's actually running
     if kill -0 "$PID" 2>/dev/null; then
