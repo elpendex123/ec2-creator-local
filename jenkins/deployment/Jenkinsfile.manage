@@ -121,21 +121,19 @@ pipeline {
                             exit 1
                         fi
 
-                        cd "${BUILD_WORKSPACE}"
-                        . ${BUILD_VENV}/bin/activate
-                        echo "✓ Environment activated from build workspace"
+                        echo "✓ Environment ready from build workspace"
                         echo ""
 
-                        # Start the server
+                        # Start the server using helper script with setsid for proper detachment
                         echo "Starting uvicorn on ${APP_HOST}:${APP_PORT}..."
-                        nohup python3 -m uvicorn app.main:app \
-                            --host ${APP_HOST} \
-                            --port ${APP_PORT} > ${UVICORN_LOG} 2>&1 &
+                        "${BUILD_WORKSPACE}/aws_cli_bash_scripts/start_server.sh" \
+                            "${BUILD_WORKSPACE}" \
+                            "${BUILD_VENV}" \
+                            "${APP_HOST}" \
+                            "${APP_PORT}" \
+                            "${UVICORN_LOG}"
 
-                        # Disown the process so it survives shell exit
-                        disown -a
-
-                        # Wait and verify
+                        # Wait for process to start
                         sleep 3
 
                         if pgrep -f "uvicorn app.main" > /dev/null; then
