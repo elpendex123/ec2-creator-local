@@ -1,0 +1,121 @@
+pipeline {
+    agent any
+
+    environment {
+        PYTHON_VERSION = '3.11'
+        VENV_DIR = '.venv'
+        APP_PORT = '8000'
+        APP_HOST = '0.0.0.0'
+    }
+
+    parameters {
+        booleanParam(name: 'RELOAD', defaultValue: false, description: 'Enable auto-reload for development')
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Setup Python Environment') {
+            steps {
+                script {
+                    sh '''
+                        python3 -m venv ${VENV_DIR}
+                        . ${VENV_DIR}/bin/activate
+                        pip install --upgrade pip
+                        pip install -r requirements.txt
+                    '''
+                }
+            }
+        }
+
+        stage('Start API Server') {
+            steps {
+                script {
+                    sh '''
+                        . ${VENV_DIR}/bin/activate
+
+                        # Kill any existing uvicorn process on port 8000
+                        pkill -f "uvicorn app.main" || true
+                        sleep 2
+
+                        # Start uvicorn
+                        if [ "${RELOAD}" = "true" ]; then
+                            nohup python3 -m uvicorn app.main:app \
+                                --host ${APP_HOST} \
+                                --port ${APP_PORT} \
+                                --reload > /tmp/uvicorn.log 2>&1 &
+                        else
+                            nohup python3 -m uvicorn app.main:app \
+                                --host ${APP_HOST} \
+                                --port ${APP_PORT} > /tmp/uvicorn.log 2>&1 &
+                        fi
+
+                        # Wait for server to start
+                        sleep 3
+
+                        # Check if server is running
+                        curl -f http://localhost:${APP_PORT}/health || exit 1
+                    '''
+                }
+            }
+        }
+
+        stage('Verify Deployment') {
+            steps {
+                script {
+                    sh '''
+                        # Give server a moment to fully initialize
+                        sleep 2
+
+                        # Test health endpoint
+                        echo "Testing health endpoint..."
+                        curl -f http://localhost:${APP_PORT}/health
+
+                        # Test Swagger docs
+                        echo "Testing Swagger docs endpoint..."
+                        curl -f http://localhost:${APP_PORT}/docs > /dev/null
+
+                        # Test instances list endpoint
+                        echo "Testing instances list endpoint..."
+                        curl -f http://localhost:${APP_PORT}/instances > /dev/null
+
+                        echo "All endpoints responding correctly!"
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                sh '''
+                    echo "API Server Status:"
+                    curl -s http://localhost:${APP_PORT}/health || echo "Server not responding"
+
+                    echo ""
+                    echo "Uvicorn Log (last 20 lines):"
+                    tail -20 /tmp/uvicorn.log || echo "No log file found"
+                '''
+            }
+        }
+
+        success {
+            echo "API server deployed successfully on http://localhost:${APP_PORT}"
+        }
+
+        failure {
+            script {
+                sh '''
+                    echo "Deployment failed!"
+                    echo "Logs:"
+                    tail -50 /tmp/uvicorn.log
+                '''
+            }
+        }
+    }
+}

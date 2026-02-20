@@ -1,0 +1,131 @@
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'INSTANCE_NAME', defaultValue: 'test-instance', description: 'Instance name')
+        string(name: 'AMI_ID', defaultValue: 'ami-026992d753d5622bc', description: 'AMI ID (default: Amazon Linux 2 in us-east-1)')
+        choice(name: 'INSTANCE_TYPE', choices: ['t3.micro', 't4g.micro'], description: 'Instance type (free-tier only)')
+        string(name: 'STORAGE_GB', defaultValue: '8', description: 'Storage size in GB')
+        booleanParam(name: 'CREATE_SECURITY_GROUP', defaultValue: true, description: 'Create security group (SSH/HTTP/HTTPS)')
+    }
+
+    stages {
+        stage('Validate Parameters') {
+            steps {
+                script {
+                    sh '''
+                        echo "Creating EC2 instance with parameters:"
+                        echo "  Name: ${INSTANCE_NAME}"
+                        echo "  AMI: ${AMI_ID}"
+                        echo "  Type: ${INSTANCE_TYPE}"
+                        echo "  Storage: ${STORAGE_GB} GB"
+                        echo "  Create Security Group: ${CREATE_SECURITY_GROUP}"
+
+                        # Validate instance type
+                        if [ "${INSTANCE_TYPE}" != "t3.micro" ] && [ "${INSTANCE_TYPE}" != "t4g.micro" ]; then
+                            echo "ERROR: Only t3.micro and t4g.micro are free-tier eligible"
+                            exit 1
+                        fi
+
+                        # Validate storage
+                        if [ ${STORAGE_GB} -lt 1 ]; then
+                            echo "ERROR: Storage must be at least 1 GB"
+                            exit 1
+                        fi
+
+                        echo "Parameters validated!"
+                    '''
+                }
+            }
+        }
+
+        stage('Create Instance') {
+            steps {
+                script {
+                    sh '''
+                        set +e
+
+                        # Check AWS CLI is available
+                        aws --version || { echo "AWS CLI not found"; exit 1; }
+
+                        # Verify AWS credentials
+                        aws sts get-caller-identity || { echo "AWS credentials not configured"; exit 1; }
+
+                        # Call the FastAPI endpoint to create instance
+                        # Make sure the API server is running on localhost:8000
+                        echo "Calling API to create instance..."
+                        curl -X POST http://localhost:8000/instances \
+                            -H "Content-Type: application/json" \
+                            -d "{
+                                \"name\": \"${INSTANCE_NAME}\",
+                                \"ami\": \"${AMI_ID}\",
+                                \"instance_type\": \"${INSTANCE_TYPE}\",
+                                \"storage_gb\": ${STORAGE_GB},
+                                \"create_security_group\": ${CREATE_SECURITY_GROUP}
+                            }" > /tmp/instance_response.json
+
+                        # Check if request succeeded
+                        if [ $? -eq 0 ]; then
+                            echo "Instance creation request successful!"
+                            cat /tmp/instance_response.json
+                        else
+                            echo "Instance creation failed!"
+                            cat /tmp/instance_response.json
+                            exit 1
+                        fi
+                    '''
+                }
+            }
+        }
+
+        stage('Verify Instance') {
+            steps {
+                script {
+                    sh '''
+                        sleep 5
+
+                        # Extract instance ID from response
+                        INSTANCE_ID=$(cat /tmp/instance_response.json | grep -o '"id":"[^"]*' | head -1 | cut -d'"' -f4)
+
+                        if [ -z "$INSTANCE_ID" ]; then
+                            echo "ERROR: Could not extract instance ID"
+                            exit 1
+                        fi
+
+                        echo "Instance ID: $INSTANCE_ID"
+
+                        # Get instance details
+                        curl -s http://localhost:8000/instances/$INSTANCE_ID | jq '.'
+
+                        # Get AWS instance status
+                        echo ""
+                        echo "AWS Instance Status:"
+                        aws ec2 describe-instances \
+                            --instance-ids $INSTANCE_ID \
+                            --query 'Reservations[0].Instances[0].[InstanceId,State.Name,PublicIpAddress,InstanceType]' \
+                            --output table || true
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                sh '''
+                    echo "Instance creation details:"
+                    cat /tmp/instance_response.json 2>/dev/null || echo "No response file"
+                '''
+            }
+        }
+
+        success {
+            echo 'Instance created successfully!'
+        }
+
+        failure {
+            echo 'Instance creation failed.'
+        }
+    }
+}

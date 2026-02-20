@@ -17,9 +17,6 @@ class Settings:
     SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
     NOTIFICATION_EMAIL = os.getenv("NOTIFICATION_EMAIL", "")
 
-    # App config
-    BACKEND = os.getenv("BACKEND", "awscli")
-
     # Database
     DATABASE_URL = os.getenv("DATABASE_URL", "./data/instances.db")
 

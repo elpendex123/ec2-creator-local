@@ -1,0 +1,126 @@
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'INSTANCE_ID', defaultValue: '', description: 'Instance ID to destroy (e.g., i-0abc123def456)')
+        booleanParam(name: 'CONFIRM', defaultValue: false, description: 'Confirm deletion (this is irreversible!)')
+    }
+
+    stages {
+        stage('Validate Parameters') {
+            steps {
+                script {
+                    sh '''
+                        if [ -z "${INSTANCE_ID}" ]; then
+                            echo "ERROR: INSTANCE_ID parameter is required"
+                            exit 1
+                        fi
+
+                        if [[ ! "${INSTANCE_ID}" =~ ^i- ]]; then
+                            echo "ERROR: Invalid instance ID format (should start with 'i-')"
+                            exit 1
+                        fi
+
+                        if [ "${CONFIRM}" != "true" ]; then
+                            echo "ERROR: Must set CONFIRM=true to proceed with destruction"
+                            exit 1
+                        fi
+
+                        echo "WARNING: About to destroy instance: ${INSTANCE_ID}"
+                        echo "This action is IRREVERSIBLE!"
+                    '''
+                }
+            }
+        }
+
+        stage('Check Instance Status') {
+            steps {
+                script {
+                    sh '''
+                        echo "Current instance status:"
+                        curl -s http://localhost:8000/instances/${INSTANCE_ID} | jq '.'
+
+                        echo ""
+                        echo "AWS status:"
+                        aws ec2 describe-instances \
+                            --instance-ids ${INSTANCE_ID} \
+                            --query 'Reservations[0].Instances[0].[InstanceId,State.Name,LaunchTime]' \
+                            --output table || true
+                    '''
+                }
+            }
+        }
+
+        stage('Confirm Destruction') {
+            steps {
+                script {
+                    sh '''
+                        echo ""
+                        echo "=========================================="
+                        echo "DESTROYING INSTANCE: ${INSTANCE_ID}"
+                        echo "=========================================="
+                        echo "This instance will be permanently terminated."
+                        echo ""
+                        sleep 2
+                    '''
+                }
+            }
+        }
+
+        stage('Destroy Instance') {
+            steps {
+                script {
+                    sh '''
+                        echo "Sending destroy request to API..."
+                        curl -X DELETE http://localhost:8000/instances/${INSTANCE_ID} \
+                            > /tmp/destroy_response.json 2>&1
+
+                        if [ $? -eq 0 ]; then
+                            echo "Destroy request successful!"
+                            cat /tmp/destroy_response.json || echo "Instance terminated"
+                        else
+                            echo "Destroy request response:"
+                            cat /tmp/destroy_response.json
+                        fi
+                    '''
+                }
+            }
+        }
+
+        stage('Verify Destruction') {
+            steps {
+                script {
+                    sh '''
+                        sleep 5
+
+                        echo "Checking AWS instance status..."
+                        aws ec2 describe-instances \
+                            --instance-ids ${INSTANCE_ID} \
+                            --query 'Reservations[0].Instances[0].[InstanceId,State.Name]' \
+                            --output table || echo "Instance not found (successfully terminated)"
+
+                        echo ""
+                        echo "Checking API database..."
+                        INSTANCE_FOUND=$(curl -s http://localhost:8000/instances/${INSTANCE_ID} 2>&1 | grep -c "not found" || echo "0")
+
+                        if [ "$INSTANCE_FOUND" -gt 0 ]; then
+                            echo "Instance removed from database"
+                        else
+                            echo "Instance still in database (may be deleted from AWS only)"
+                        fi
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Instance destroyed successfully!'
+        }
+
+        failure {
+            echo 'Failed to destroy instance.'
+        }
+    }
+}

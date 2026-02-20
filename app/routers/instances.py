@@ -3,7 +3,6 @@ from app.models.instance import InstanceCreateRequest, InstanceResponse, Instanc
 from app.config import settings
 from app.services.db import db
 from app.services.aws_cli import aws_cli_backend
-from app.services.terraform import terraform_backend
 from app.services.notifications import send_notification
 from datetime import datetime
 from typing import Optional
@@ -17,21 +16,14 @@ def validate_free_tier(instance_type: str, ami: str, region: str = None) -> bool
 
 
 def get_backend(backend_param: Optional[str] = None):
-    """Get the appropriate backend based on query parameter or default."""
-    backend = backend_param or settings.BACKEND
-    if backend == "terraform":
-        return terraform_backend
-    elif backend == "awscli":
-        return aws_cli_backend
-    else:
-        raise ValueError(f"Unknown backend: {backend}")
+    """Get the AWS CLI backend (only backend available)."""
+    return aws_cli_backend
 
 
 @router.post("", response_model=InstanceResponse, status_code=status.HTTP_201_CREATED)
 async def create_instance(
     request: InstanceCreateRequest,
     background_tasks: BackgroundTasks,
-    backend: Optional[str] = Query(None, description="Backend to use: terraform or awscli"),
 ):
     """Create a new EC2 instance."""
     # Validate free tier
@@ -80,7 +72,7 @@ async def create_instance(
         "state": "running",
         "ami": request.ami,
         "instance_type": request.instance_type,
-        "backend_used": backend or settings.BACKEND,
+        "backend_used": "awscli",
     }
 
     db.create_instance_record(instance_data)
@@ -96,7 +88,7 @@ async def create_instance(
         state="running",
         ami=request.ami,
         instance_type=request.instance_type,
-        backend_used=backend or settings.BACKEND,
+        backend_used="awscli",
         created_at=datetime.utcnow(),
     )
 
@@ -125,7 +117,7 @@ async def list_instances(backend: Optional[str] = Query(None)):
 
 
 @router.get("/{instance_id}", response_model=InstanceResponse)
-async def get_instance(instance_id: str, backend: Optional[str] = Query(None)):
+async def get_instance(instance_id: str):
     """Get details of a specific instance."""
     instance = db.get_instance(instance_id)
 
@@ -152,7 +144,6 @@ async def get_instance(instance_id: str, backend: Optional[str] = Query(None)):
 async def start_instance(
     instance_id: str,
     background_tasks: BackgroundTasks,
-    backend: Optional[str] = Query(None),
 ):
     """Start a stopped instance."""
     # Check if instance exists
@@ -163,11 +154,8 @@ async def start_instance(
             detail=f"Instance not found: {instance_id}",
         )
 
-    # Get backend
-    try:
-        service = get_backend(backend or instance["backend_used"])
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    # Get backend (AWS CLI only)
+    service = get_backend()
 
     # Start instance
     try:
@@ -202,7 +190,6 @@ async def start_instance(
 async def stop_instance(
     instance_id: str,
     background_tasks: BackgroundTasks,
-    backend: Optional[str] = Query(None),
 ):
     """Stop a running instance."""
     # Check if instance exists
@@ -213,11 +200,8 @@ async def stop_instance(
             detail=f"Instance not found: {instance_id}",
         )
 
-    # Get backend
-    try:
-        service = get_backend(backend or instance["backend_used"])
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    # Get backend (AWS CLI only)
+    service = get_backend()
 
     # Stop instance
     try:
@@ -252,7 +236,6 @@ async def stop_instance(
 async def destroy_instance(
     instance_id: str,
     background_tasks: BackgroundTasks,
-    backend: Optional[str] = Query(None),
 ):
     """Destroy/terminate an instance."""
     # Check if instance exists
@@ -263,11 +246,8 @@ async def destroy_instance(
             detail=f"Instance not found: {instance_id}",
         )
 
-    # Get backend
-    try:
-        service = get_backend(backend or instance["backend_used"])
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    # Get backend (AWS CLI only)
+    service = get_backend()
 
     # Destroy instance
     try:

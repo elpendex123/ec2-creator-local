@@ -1,0 +1,107 @@
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'INSTANCE_ID', defaultValue: '', description: 'Instance ID to start (e.g., i-0abc123def456)')
+    }
+
+    stages {
+        stage('Validate Instance ID') {
+            steps {
+                script {
+                    sh '''
+                        if [ -z "${INSTANCE_ID}" ]; then
+                            echo "ERROR: INSTANCE_ID parameter is required"
+                            exit 1
+                        fi
+
+                        if [[ ! "${INSTANCE_ID}" =~ ^i- ]]; then
+                            echo "ERROR: Invalid instance ID format (should start with 'i-')"
+                            exit 1
+                        fi
+
+                        echo "Starting instance: ${INSTANCE_ID}"
+                    '''
+                }
+            }
+        }
+
+        stage('Check Instance Status') {
+            steps {
+                script {
+                    sh '''
+                        echo "Current instance status:"
+                        curl -s http://localhost:8000/instances/${INSTANCE_ID} | jq '.state'
+
+                        echo ""
+                        echo "AWS status:"
+                        aws ec2 describe-instances \
+                            --instance-ids ${INSTANCE_ID} \
+                            --query 'Reservations[0].Instances[0].[InstanceId,State.Name]' \
+                            --output table || true
+                    '''
+                }
+            }
+        }
+
+        stage('Start Instance') {
+            steps {
+                script {
+                    sh '''
+                        echo "Sending start request to API..."
+                        curl -X POST http://localhost:8000/instances/${INSTANCE_ID}/start \
+                            -H "Content-Type: application/json" > /tmp/start_response.json
+
+                        if [ $? -eq 0 ]; then
+                            echo "Start request successful!"
+                            cat /tmp/start_response.json | jq '.'
+                        else
+                            echo "Start request failed!"
+                            cat /tmp/start_response.json
+                            exit 1
+                        fi
+                    '''
+                }
+            }
+        }
+
+        stage('Verify Instance Running') {
+            steps {
+                script {
+                    sh '''
+                        sleep 10
+
+                        echo "Checking instance state..."
+                        STATE=$(curl -s http://localhost:8000/instances/${INSTANCE_ID} | jq -r '.state')
+
+                        echo "Instance state: $STATE"
+
+                        if [ "$STATE" = "running" ]; then
+                            echo "Instance is running!"
+                        else
+                            echo "Warning: Instance state is $STATE (may still be starting)"
+                        fi
+
+                        # Show AWS status
+                        echo ""
+                        echo "AWS status:"
+                        aws ec2 describe-instances \
+                            --instance-ids ${INSTANCE_ID} \
+                            --query 'Reservations[0].Instances[0].[InstanceId,State.Name,PublicIpAddress]' \
+                            --output table
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Instance started successfully!'
+        }
+
+        failure {
+            echo 'Failed to start instance.'
+        }
+    }
+}

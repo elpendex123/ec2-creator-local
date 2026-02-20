@@ -1,0 +1,73 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('List Instances from API') {
+            steps {
+                script {
+                    sh '''
+                        echo "Fetching instances from API..."
+                        curl -s http://localhost:8000/instances | jq '.' > /tmp/instances.json
+
+                        echo ""
+                        echo "Instances in database:"
+                        cat /tmp/instances.json | jq '.instances[] | {id, name, state, public_ip, instance_type}'
+                    '''
+                }
+            }
+        }
+
+        stage('List AWS Instances') {
+            steps {
+                script {
+                    sh '''
+                        echo ""
+                        echo "Instances in AWS (all states):"
+                        aws ec2 describe-instances \
+                            --query 'Reservations[*].Instances[*].[InstanceId,State.Name,PublicIpAddress,InstanceType,LaunchTime]' \
+                            --output table || true
+                    '''
+                }
+            }
+        }
+
+        stage('Instance Count') {
+            steps {
+                script {
+                    sh '''
+                        echo ""
+                        echo "Instance counts:"
+
+                        # Count from database
+                        API_COUNT=$(cat /tmp/instances.json | jq '.instances | length')
+                        echo "In database: $API_COUNT"
+
+                        # Count from AWS
+                        AWS_COUNT=$(aws ec2 describe-instances --query 'Reservations[*].Instances[*]' --output text | wc -l)
+                        echo "In AWS: $AWS_COUNT"
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                sh '''
+                    echo ""
+                    echo "Full API response:"
+                    cat /tmp/instances.json | jq '.'
+                '''
+            }
+        }
+
+        success {
+            echo 'Instances listed successfully!'
+        }
+
+        failure {
+            echo 'Failed to list instances.'
+        }
+    }
+}

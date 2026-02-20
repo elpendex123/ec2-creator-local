@@ -1,0 +1,107 @@
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'INSTANCE_ID', defaultValue: '', description: 'Instance ID to stop (e.g., i-0abc123def456)')
+    }
+
+    stages {
+        stage('Validate Instance ID') {
+            steps {
+                script {
+                    sh '''
+                        if [ -z "${INSTANCE_ID}" ]; then
+                            echo "ERROR: INSTANCE_ID parameter is required"
+                            exit 1
+                        fi
+
+                        if [[ ! "${INSTANCE_ID}" =~ ^i- ]]; then
+                            echo "ERROR: Invalid instance ID format (should start with 'i-')"
+                            exit 1
+                        fi
+
+                        echo "Stopping instance: ${INSTANCE_ID}"
+                    '''
+                }
+            }
+        }
+
+        stage('Check Instance Status') {
+            steps {
+                script {
+                    sh '''
+                        echo "Current instance status:"
+                        curl -s http://localhost:8000/instances/${INSTANCE_ID} | jq '.state'
+
+                        echo ""
+                        echo "AWS status:"
+                        aws ec2 describe-instances \
+                            --instance-ids ${INSTANCE_ID} \
+                            --query 'Reservations[0].Instances[0].[InstanceId,State.Name]' \
+                            --output table || true
+                    '''
+                }
+            }
+        }
+
+        stage('Stop Instance') {
+            steps {
+                script {
+                    sh '''
+                        echo "Sending stop request to API..."
+                        curl -X POST http://localhost:8000/instances/${INSTANCE_ID}/stop \
+                            -H "Content-Type: application/json" > /tmp/stop_response.json
+
+                        if [ $? -eq 0 ]; then
+                            echo "Stop request successful!"
+                            cat /tmp/stop_response.json | jq '.'
+                        else
+                            echo "Stop request failed!"
+                            cat /tmp/stop_response.json
+                            exit 1
+                        fi
+                    '''
+                }
+            }
+        }
+
+        stage('Verify Instance Stopped') {
+            steps {
+                script {
+                    sh '''
+                        sleep 10
+
+                        echo "Checking instance state..."
+                        STATE=$(curl -s http://localhost:8000/instances/${INSTANCE_ID} | jq -r '.state')
+
+                        echo "Instance state: $STATE"
+
+                        if [ "$STATE" = "stopped" ]; then
+                            echo "Instance is stopped!"
+                        else
+                            echo "Warning: Instance state is $STATE (may still be stopping)"
+                        fi
+
+                        # Show AWS status
+                        echo ""
+                        echo "AWS status:"
+                        aws ec2 describe-instances \
+                            --instance-ids ${INSTANCE_ID} \
+                            --query 'Reservations[0].Instances[0].[InstanceId,State.Name]' \
+                            --output table
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Instance stopped successfully!'
+        }
+
+        failure {
+            echo 'Failed to stop instance.'
+        }
+    }
+}
