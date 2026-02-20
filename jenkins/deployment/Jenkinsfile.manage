@@ -130,13 +130,10 @@ pipeline {
                         . ${BUILD_VENV}/bin/activate
 
                         # Use nohup + setsid to create new session and detach completely
+                        # The & at the end backgrounds the process
                         nohup setsid python3 -m uvicorn app.main:app \
                             --host ${APP_HOST} \
                             --port ${APP_PORT} > ${UVICORN_LOG} 2>&1 &
-
-                        # Get PID and disown
-                        SERVER_PID=$!
-                        disown $SERVER_PID
 
                         # Wait for process to start
                         sleep 3
