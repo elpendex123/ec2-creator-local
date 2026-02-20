@@ -1,18 +1,29 @@
 # EC2 Creator (Local Development)
 
-A FastAPI REST API for provisioning and managing AWS EC2 instances locally with AWS CLI bash scripts and optional Terraform backend.
+A lightweight FastAPI REST API for provisioning and managing AWS EC2 instances locally. Features AWS CLI integration, SQLite persistence, and Jenkins automation.
+
+## Current Status
+
+**Phase:** Local Development (Stage 1) ✅
+
+- ✅ All REST API endpoints functional
+- ✅ AWS CLI integration complete
+- ✅ SQLite database working
+- ✅ Jenkins pipelines operational
+- ✅ Professional server process management
+- ⏳ Process survival verification in progress
 
 ## Overview
 
 **EC2 Creator** is a local development tool that:
-- ✅ Provisions EC2 instances with AWS CLI (primary) or Terraform (optional)
+- ✅ Provisions EC2 instances with AWS CLI bash scripts
 - ✅ Enforces free-tier constraints (t3.micro, t4g.micro only)
 - ✅ Manages instance lifecycle (create, start, stop, destroy)
-- ✅ Creates security groups for SSH, HTTP, HTTPS access
 - ✅ Stores instance records in SQLite
-- ✅ Sends email notifications on lifecycle events (optional)
-- ✅ Runs locally with uvicorn or Jenkins
+- ✅ Runs locally with uvicorn or via Jenkins pipelines
 - ✅ Includes Swagger/OpenAPI documentation
+- ✅ Professional process management for long-running server
+- ✅ CI/CD automation with Jenkins
 
 ## Quick Start (5 minutes)
 
@@ -323,6 +334,17 @@ flake8 app/
 # Check Terraform (if using optional backend)
 terraform -chdir=terraform/ec2 validate
 ```
+
+## Documentation
+
+Complete documentation is available in the `docs/` directory:
+
+- **[PROJECT_STATUS.md](docs/PROJECT_STATUS.md)** — Comprehensive project status, architecture, and next steps
+- **[DEPLOYMENT_STATUS.md](docs/DEPLOYMENT_STATUS.md)** — Current deployment phase and environment setup
+- **[SERVER_MANAGEMENT.md](docs/SERVER_MANAGEMENT.md)** — Process manager script documentation
+- **[JENKINS_PIPELINES.md](docs/JENKINS_PIPELINES.md)** — Jenkins job setup and usage
+- **[QUICK_START.md](docs/QUICK_START.md)** — 5-minute quick start guide
+- **[API_REFERENCE.md](docs/API_REFERENCE.md)** — Complete API endpoint documentation (if available)
 
 ## Troubleshooting
 
