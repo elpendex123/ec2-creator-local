@@ -79,14 +79,26 @@ pipeline {
                             echo ""
                         fi
 
-                        # Use systemd to start the server
-                        echo "Starting uvicorn server via systemd..."
-                        ./scripts/manage_server.sh start "${BUILD_WORKSPACE}" "${APP_HOST}" "${APP_PORT}"
+                        # Critical: Unset BUILD_ID so Jenkins doesn't track/kill background processes
+                        # This is the standard way to start servers in Jenkins that should survive the job
+                        unset BUILD_ID
 
-                        if [ $? -eq 0 ]; then
-                            echo "✓ Server started successfully!"
+                        echo "Starting uvicorn server..."
+                        cd "${BUILD_WORKSPACE}"
+                        nohup python3 -m uvicorn app.main:app --host "${APP_HOST}" --port "${APP_PORT}" < /dev/null > /tmp/uvicorn.log 2>&1 &
+                        SERVER_PID=$!
+
+                        # Give server time to start
+                        sleep 3
+
+                        # Verify it's running
+                        if curl -s "http://localhost:${APP_PORT}/health" >/dev/null 2>&1; then
+                            echo "✓ Server started successfully (PID $SERVER_PID)"
+                            echo "✓ Server is detached from Jenkins and will continue running"
                         else
-                            echo "✗ Failed to start server"
+                            echo "✗ Server failed to start"
+                            echo "Logs:"
+                            tail -30 /tmp/uvicorn.log
                             exit 1
                         fi
 
