@@ -51,7 +51,36 @@ pipeline {
                 script {
                     sh '''
                         . ${VENV_DIR}/bin/activate
-                        pytest test_api.py -v --tb=short
+
+                        # Start the FastAPI server in the background
+                        echo "Starting FastAPI server..."
+                        nohup uvicorn app.main:app --host 127.0.0.1 --port 8000 > /tmp/uvicorn.log 2>&1 &
+                        SERVER_PID=$!
+                        echo "Server PID: $SERVER_PID"
+
+                        # Wait for server to be ready
+                        echo "Waiting for server to start..."
+                        for i in {1..30}; do
+                            if curl -s http://127.0.0.1:8000/health > /dev/null 2>&1; then
+                                echo "✓ Server is ready"
+                                break
+                            fi
+                            echo "Attempt $i/30: Waiting for server..."
+                            sleep 1
+                        done
+
+                        # Run tests
+                        echo "Running integration tests..."
+                        pytest test_api.py -v --tb=short || TEST_RESULT=$?
+
+                        # Kill the server
+                        echo "Stopping server..."
+                        kill $SERVER_PID 2>/dev/null || true
+                        sleep 1
+                        kill -9 $SERVER_PID 2>/dev/null || true
+
+                        # Exit with test result
+                        exit ${TEST_RESULT:-0}
                     '''
                 }
             }
