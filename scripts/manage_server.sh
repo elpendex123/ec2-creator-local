@@ -65,34 +65,37 @@ start_server() {
     echo "Starting uvicorn server as jenkins user..."
     cd "$BUILD_WORKSPACE"
 
-    # Start uvicorn directly with nohup, properly detached
-    # The process will be owned by jenkins user (current user running this script)
-    nohup python3 -m uvicorn app.main:app \
+    # Use setsid to completely detach from Jenkins process group
+    # This ensures Jenkins can't kill the process when it terminates
+    setsid nohup python3 -m uvicorn app.main:app \
         --host "$APP_HOST" \
         --port "$APP_PORT" \
         < /dev/null > /tmp/uvicorn.log 2>&1 &
 
     PROC_PID=$!
     echo "$PROC_PID" > "$PID_FILE"
-    disown $PROC_PID
 
     echo "✓ Server started with PID $PROC_PID (jenkins user)"
 
     # Wait for uvicorn to start and initialize
-    sleep 3
+    sleep 4
 
-    # Verify the process is still running
-    if kill -0 "$PROC_PID" 2>/dev/null; then
-        echo "✓ Server is running"
-        return 0
-    else
+    # Find the actual uvicorn process (setsid creates a new session, so the PID might be different)
+    ACTUAL_PID=$(pgrep -f "python3 -m uvicorn app.main:app" | head -1)
+
+    if [ -z "$ACTUAL_PID" ]; then
         echo "✗ Server failed to start or crashed during initialization"
         rm -f "$PID_FILE"
         echo ""
-        echo "Last 20 lines of /tmp/uvicorn.log:"
-        tail -20 /tmp/uvicorn.log
+        echo "Last 30 lines of /tmp/uvicorn.log:"
+        tail -30 /tmp/uvicorn.log
         return 1
     fi
+
+    # Update PID file with actual uvicorn PID
+    echo "$ACTUAL_PID" > "$PID_FILE"
+    echo "✓ Server is running with PID $ACTUAL_PID"
+    return 0
 }
 
 stop_server() {
