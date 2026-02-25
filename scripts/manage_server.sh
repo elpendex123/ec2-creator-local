@@ -15,8 +15,8 @@ start_server() {
     if [ -f "$PID_FILE" ]; then
         PID=$(cat "$PID_FILE")
         if kill -0 "$PID" 2>/dev/null; then
-            echo "✗ Server is already running with PID $PID"
-            return 1
+            echo "✓ Server is already running with PID $PID"
+            return 0
         else
             echo "Removing stale PID file"
             rm -f "$PID_FILE" 2>/dev/null || true
