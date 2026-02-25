@@ -44,23 +44,39 @@ start_server() {
     echo "Starting uvicorn server..."
     cd "$BUILD_WORKSPACE"
 
-    # Start the process with nohup and proper backgrounding
-    # nohup ensures it survives SIGHUP, < /dev/null disconnects stdin
-    # disown prevents job control from terminating the process when bash exits
-    nohup python3 -m uvicorn app.main:app \
-        --host "$APP_HOST" \
-        --port "$APP_PORT" \
-        < /dev/null > /tmp/uvicorn.log 2>&1 &
+    # Create a wrapper script that will start uvicorn completely detached
+    # This ensures Jenkins can't kill it when the shell exits
+    cat > /tmp/start_uvicorn.sh << 'WRAPPER'
+#!/bin/bash
+cd "$1"
+source .venv/bin/activate
+nohup python3 -m uvicorn app.main:app --host "$2" --port "$3" < /dev/null > /tmp/uvicorn.log 2>&1 &
+WRAPPER
 
-    # Save PID and disown the process so it survives shell exit
-    PID=$!
-    echo $PID > "$PID_FILE"
-    disown $PID
+    chmod +x /tmp/start_uvicorn.sh
 
+    # Run the wrapper completely detached from this shell
+    /tmp/start_uvicorn.sh "$BUILD_WORKSPACE" "$APP_HOST" "$APP_PORT" &
+    WRAPPER_PID=$!
+    disown $WRAPPER_PID
+
+    # Give it a moment to start the actual uvicorn process
+    sleep 2
+
+    # Find the actual uvicorn PID
+    PID=$(pgrep -f "python3 -m uvicorn app.main" | head -1)
+
+    if [ -z "$PID" ]; then
+        echo "✗ Server failed to start"
+        tail -20 /tmp/uvicorn.log
+        return 1
+    fi
+
+    echo "$PID" > "$PID_FILE"
     echo "✓ Server started with PID $PID"
 
-    # Wait for startup
-    sleep 3
+    # Wait a bit more for full startup
+    sleep 2
 
     # Verify it's actually running
     if kill -0 "$PID" 2>/dev/null; then
