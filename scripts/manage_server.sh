@@ -11,8 +11,18 @@ APP_HOST="${3:-0.0.0.0}"
 APP_PORT="${4:-8000}"
 SERVICE_NAME="ec2-provisioner"
 
+# Helper to run systemctl with proper error handling
+run_systemctl() {
+    if systemctl --user "$@" 2>/dev/null; then
+        return 0
+    else
+        # Fallback: try with sudo if systemctl --user fails
+        sudo systemctl --user "$@" 2>/dev/null || return 1
+    fi
+}
+
 # Check if systemd user service is available
-if ! systemctl --user is-enabled "$SERVICE_NAME" >/dev/null 2>&1; then
+if ! run_systemctl is-enabled "$SERVICE_NAME" >/dev/null 2>&1; then
     echo "✗ ERROR: Systemd user service is not set up"
     echo ""
     echo "Please run the setup script first:"
@@ -25,22 +35,22 @@ start_server() {
     echo "Starting EC2 Provisioner API server..."
 
     # Check if already running
-    if systemctl --user is-active --quiet "$SERVICE_NAME"; then
+    if run_systemctl is-active --quiet "$SERVICE_NAME"; then
         echo "✓ Server is already running"
-        systemctl --user status "$SERVICE_NAME" --no-pager | grep -E "Active|Main PID"
+        run_systemctl status "$SERVICE_NAME" --no-pager | grep -E "Active|Main PID"
         return 0
     fi
 
     # Start the service
-    systemctl --user start "$SERVICE_NAME"
+    run_systemctl start "$SERVICE_NAME"
 
     # Wait for startup
     sleep 2
 
     # Verify it started
-    if systemctl --user is-active --quiet "$SERVICE_NAME"; then
+    if run_systemctl is-active --quiet "$SERVICE_NAME"; then
         echo "✓ Server started successfully"
-        systemctl --user status "$SERVICE_NAME" --no-pager | grep -E "Active|Main PID"
+        run_systemctl status "$SERVICE_NAME" --no-pager | grep -E "Active|Main PID"
         return 0
     else
         echo "✗ Server failed to start"
@@ -54,19 +64,19 @@ start_server() {
 stop_server() {
     echo "Stopping EC2 Provisioner API server..."
 
-    if ! systemctl --user is-active --quiet "$SERVICE_NAME"; then
+    if ! run_systemctl is-active --quiet "$SERVICE_NAME"; then
         echo "✓ Server is not running"
         return 0
     fi
 
     # Stop the service
-    systemctl --user stop "$SERVICE_NAME"
+    run_systemctl stop "$SERVICE_NAME"
 
     # Wait for shutdown
     sleep 1
 
     # Verify it stopped
-    if systemctl --user is-active --quiet "$SERVICE_NAME"; then
+    if run_systemctl is-active --quiet "$SERVICE_NAME"; then
         echo "✗ Server failed to stop"
         return 1
     else
@@ -79,8 +89,8 @@ status_server() {
     echo "EC2 Provisioner API Server Status"
     echo "=================================="
 
-    if systemctl --user is-active --quiet "$SERVICE_NAME"; then
-        systemctl --user status "$SERVICE_NAME" --no-pager
+    if run_systemctl is-active --quiet "$SERVICE_NAME"; then
+        run_systemctl status "$SERVICE_NAME" --no-pager
 
         # Check health endpoint
         if curl -s "http://localhost:$APP_PORT/health" >/dev/null 2>&1; then
@@ -95,7 +105,7 @@ status_server() {
         fi
     else
         echo "✗ Server is not running"
-        systemctl --user status "$SERVICE_NAME" --no-pager || true
+        run_systemctl status "$SERVICE_NAME" --no-pager || true
         return 1
     fi
 }
@@ -112,9 +122,9 @@ case "$ACTION" in
         ;;
     restart)
         echo "Restarting EC2 Provisioner API server..."
-        systemctl --user restart "$SERVICE_NAME"
+        run_systemctl restart "$SERVICE_NAME"
         sleep 2
-        if systemctl --user is-active --quiet "$SERVICE_NAME"; then
+        if run_systemctl is-active --quiet "$SERVICE_NAME"; then
             echo "✓ Server restarted successfully"
             return 0
         else

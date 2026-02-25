@@ -26,7 +26,7 @@ Description=EC2 Provisioner FastAPI Server
 After=network.target
 
 [Service]
-Type=notify
+Type=simple
 WorkingDirectory=BUILD_WORKSPACE_PLACEHOLDER
 ExecStart=BUILD_WORKSPACE_PLACEHOLDER/.venv/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 Restart=on-failure
@@ -45,16 +45,23 @@ sed -i "s|BUILD_WORKSPACE_PLACEHOLDER|$BUILD_WORKSPACE|g" "$SERVICE_FILE"
 echo "✓ Service file created"
 echo ""
 
+# Enable lingering for this user so services can run without an active session
+echo "Enabling lingering for $USER (allows services to run without session)..."
+loginctl enable-linger "$USER" 2>/dev/null || sudo loginctl enable-linger "$USER" || true
+
+echo "✓ Lingering enabled"
+echo ""
+
 # Reload systemd user daemon to recognize the new service
 echo "Reloading systemd user daemon..."
-systemctl --user daemon-reload
+systemctl --user daemon-reload 2>/dev/null || true
 
 echo "✓ Systemd reloaded"
 echo ""
 
 # Enable the service to start on login
-echo "Enabling service to start on login..."
-systemctl --user enable "$SERVICE_NAME"
+echo "Enabling service..."
+systemctl --user enable "$SERVICE_NAME" 2>/dev/null || true
 
 echo "✓ Service enabled"
 echo ""
