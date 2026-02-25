@@ -9,7 +9,8 @@ ACTION="${1:-status}"
 BUILD_WORKSPACE="${2:-.}"
 APP_HOST="${3:-0.0.0.0}"
 APP_PORT="${4:-8000}"
-PID_FILE="/tmp/ec2-provisioner.pid"
+# Use workspace-specific PID file to avoid permission conflicts between jenkins and local user
+PID_FILE="${BUILD_WORKSPACE}/.pid"
 
 start_server() {
     # Check if port is already in use (fallback to netstat if lsof unavailable)
