@@ -43,29 +43,39 @@ fi
 start_server() {
     echo "Starting EC2 Provisioner API server..."
 
-    # Check if already running
-    if run_systemctl is-active --quiet "$SERVICE_NAME"; then
-        echo "✓ Server is already running"
-        run_systemctl status "$SERVICE_NAME" --no-pager | grep -E "Active|Main PID" || true
+    # Check if already running by looking for the process
+    if pgrep -f "python3 -m uvicorn app.main:app" > /dev/null 2>&1; then
+        PID=$(pgrep -f "python3 -m uvicorn app.main:app" | head -1)
+        echo "✓ Server is already running (PID $PID)"
         return 0
     fi
 
-    # Start the service
-    run_systemctl start "$SERVICE_NAME"
+    # Start the service using systemctl (if available) or fallback to direct start
+    if run_systemctl start "$SERVICE_NAME" 2>/dev/null; then
+        echo "✓ Started via systemd"
+    else
+        # Fallback: systemctl failed, start directly
+        echo "⚠ systemctl unavailable, starting directly..."
+        cd "$BUILD_WORKSPACE"
+        nohup python3 -m uvicorn app.main:app --host "$APP_HOST" --port "$APP_PORT" < /dev/null > /tmp/uvicorn.log 2>&1 &
+        PROC_PID=$!
+        disown $PROC_PID
+        echo "✓ Started directly with PID $PROC_PID"
+    fi
 
     # Wait for startup
-    sleep 2
+    sleep 3
 
     # Verify it started
-    if run_systemctl is-active --quiet "$SERVICE_NAME"; then
-        echo "✓ Server started successfully"
-        run_systemctl status "$SERVICE_NAME" --no-pager | grep -E "Active|Main PID" || true
+    if pgrep -f "python3 -m uvicorn app.main:app" > /dev/null 2>&1; then
+        PID=$(pgrep -f "python3 -m uvicorn app.main:app" | head -1)
+        echo "✓ Server started successfully (PID $PID)"
         return 0
     else
         echo "✗ Server failed to start"
         echo ""
         echo "Recent logs:"
-        journalctl --user -u "$SERVICE_NAME" -n 20 --no-pager || true
+        tail -20 /tmp/uvicorn.log 2>/dev/null || true
         return 1
     fi
 }
@@ -73,63 +83,63 @@ start_server() {
 stop_server() {
     echo "Stopping EC2 Provisioner API server..."
 
-    if ! run_systemctl is-active --quiet "$SERVICE_NAME"; then
+    # Check if process is running
+    if ! pgrep -f "python3 -m uvicorn app.main:app" > /dev/null 2>&1; then
         echo "✓ Server is not running"
         return 0
     fi
 
-    # Stop the service
-    run_systemctl stop "$SERVICE_NAME"
+    # Try to stop via systemctl first
+    run_systemctl stop "$SERVICE_NAME" 2>/dev/null || true
 
-    # Wait for shutdown
+    # Also directly kill the process to be sure
+    pkill -f "python3 -m uvicorn app.main:app" || true
     sleep 1
 
     # Verify it stopped
-    if run_systemctl is-active --quiet "$SERVICE_NAME"; then
-        echo "✗ Server failed to stop"
-        return 1
-    else
-        echo "✓ Server stopped successfully"
-        return 0
+    if pgrep -f "python3 -m uvicorn app.main:app" > /dev/null 2>&1; then
+        echo "✗ Server failed to stop, forcing kill..."
+        pkill -9 -f "python3 -m uvicorn app.main:app" || true
+        sleep 1
+
+        if pgrep -f "python3 -m uvicorn app.main:app" > /dev/null 2>&1; then
+            echo "✗ Server still running"
+            return 1
+        fi
     fi
+
+    echo "✓ Server stopped successfully"
+    return 0
 }
 
 status_server() {
     echo "EC2 Provisioner API Server Status"
     echo "=================================="
 
-    if run_systemctl is-active --quiet "$SERVICE_NAME"; then
-        run_systemctl status "$SERVICE_NAME" --no-pager || true
+    if pgrep -f "python3 -m uvicorn app.main:app" > /dev/null 2>&1; then
+        PID=$(pgrep -f "python3 -m uvicorn app.main:app" | head -1)
+        echo "✓ Server is running (PID $PID)"
 
         # Check health endpoint
         if curl -s "http://localhost:$APP_PORT/health" >/dev/null 2>&1; then
             HEALTH=$(curl -s "http://localhost:$APP_PORT/health")
-            echo ""
             echo "✓ Health check passed: $HEALTH"
             return 0
         else
-            echo ""
             echo "⚠ Server running but health check failed"
             return 1
         fi
     else
         echo "✗ Server is not running"
-        run_systemctl status "$SERVICE_NAME" --no-pager || true
         return 1
     fi
 }
 
 restart_server() {
     echo "Restarting EC2 Provisioner API server..."
-    run_systemctl restart "$SERVICE_NAME"
-    sleep 2
-    if run_systemctl is-active --quiet "$SERVICE_NAME"; then
-        echo "✓ Server restarted successfully"
-        return 0
-    else
-        echo "✗ Server failed to restart"
-        return 1
-    fi
+    stop_server || true
+    sleep 1
+    start_server
 }
 
 # Execute the requested action
