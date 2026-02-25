@@ -50,18 +50,11 @@ start_server() {
         return 0
     fi
 
-    # Start the service using systemctl (if available) or fallback to direct start
-    if run_systemctl start "$SERVICE_NAME" 2>/dev/null; then
-        echo "✓ Started via systemd"
-    else
-        # Fallback: systemctl failed, start directly
-        echo "⚠ systemctl unavailable, starting directly..."
-        cd "$BUILD_WORKSPACE"
-        nohup python3 -m uvicorn app.main:app --host "$APP_HOST" --port "$APP_PORT" < /dev/null > /tmp/uvicorn.log 2>&1 &
-        PROC_PID=$!
-        disown $PROC_PID
-        echo "✓ Started directly with PID $PROC_PID"
-    fi
+    # Start the service using the daemon script (properly daemonizes to escape Jenkins)
+    # This uses double-fork technique to completely detach from parent process
+    echo "Starting server daemon..."
+    python3 "$(dirname "$0")/start_server_daemon.py" "$BUILD_WORKSPACE" &
+    sleep 1
 
     # Wait for startup
     sleep 3
@@ -94,6 +87,7 @@ stop_server() {
 
     # Also directly kill the process to be sure
     pkill -f "python3 -m uvicorn app.main:app" || true
+    pkill -f "start_server_daemon.py" || true
     sleep 1
 
     # Verify it stopped
