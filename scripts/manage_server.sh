@@ -1,7 +1,7 @@
 #!/bin/bash
 # Server management using systemd user service
 # No root required - systemd user services run as the current user
-# Much more reliable than manual process management
+# Much more reliable process management
 
 set -euo pipefail
 
@@ -28,7 +28,7 @@ if ! run_systemctl is-enabled "$SERVICE_NAME" >/dev/null 2>&1; then
     echo "Please run the setup script first:"
     echo "  ./scripts/setup_systemd_service.sh $BUILD_WORKSPACE"
     echo ""
-    return 1
+    exit 1
 fi
 
 start_server() {
@@ -37,7 +37,7 @@ start_server() {
     # Check if already running
     if run_systemctl is-active --quiet "$SERVICE_NAME"; then
         echo "✓ Server is already running"
-        run_systemctl status "$SERVICE_NAME" --no-pager | grep -E "Active|Main PID"
+        run_systemctl status "$SERVICE_NAME" --no-pager | grep -E "Active|Main PID" || true
         return 0
     fi
 
@@ -50,13 +50,13 @@ start_server() {
     # Verify it started
     if run_systemctl is-active --quiet "$SERVICE_NAME"; then
         echo "✓ Server started successfully"
-        run_systemctl status "$SERVICE_NAME" --no-pager | grep -E "Active|Main PID"
+        run_systemctl status "$SERVICE_NAME" --no-pager | grep -E "Active|Main PID" || true
         return 0
     else
         echo "✗ Server failed to start"
         echo ""
         echo "Recent logs:"
-        journalctl --user -u "$SERVICE_NAME" -n 20 --no-pager
+        journalctl --user -u "$SERVICE_NAME" -n 20 --no-pager || true
         return 1
     fi
 }
@@ -90,7 +90,7 @@ status_server() {
     echo "=================================="
 
     if run_systemctl is-active --quiet "$SERVICE_NAME"; then
-        run_systemctl status "$SERVICE_NAME" --no-pager
+        run_systemctl status "$SERVICE_NAME" --no-pager || true
 
         # Check health endpoint
         if curl -s "http://localhost:$APP_PORT/health" >/dev/null 2>&1; then
@@ -110,6 +110,20 @@ status_server() {
     fi
 }
 
+restart_server() {
+    echo "Restarting EC2 Provisioner API server..."
+    run_systemctl restart "$SERVICE_NAME"
+    sleep 2
+    if run_systemctl is-active --quiet "$SERVICE_NAME"; then
+        echo "✓ Server restarted successfully"
+        return 0
+    else
+        echo "✗ Server failed to restart"
+        return 1
+    fi
+}
+
+# Execute the requested action
 case "$ACTION" in
     start)
         start_server
@@ -121,21 +135,12 @@ case "$ACTION" in
         status_server
         ;;
     restart)
-        echo "Restarting EC2 Provisioner API server..."
-        run_systemctl restart "$SERVICE_NAME"
-        sleep 2
-        if run_systemctl is-active --quiet "$SERVICE_NAME"; then
-            echo "✓ Server restarted successfully"
-            return 0
-        else
-            echo "✗ Server failed to restart"
-            return 1
-        fi
+        restart_server
         ;;
     *)
         echo "Usage: $0 {start|stop|status|restart} [BUILD_WORKSPACE] [APP_HOST] [APP_PORT]"
-        echo ""
-        echo "Setup: $0 setup <BUILD_WORKSPACE>"
         exit 1
         ;;
 esac
+
+exit $?
