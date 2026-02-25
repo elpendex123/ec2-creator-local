@@ -85,8 +85,11 @@ pipeline {
 
                         echo "Starting uvicorn server..."
                         cd "${BUILD_WORKSPACE}"
-                        nohup python3 -m uvicorn app.main:app --host "${APP_HOST}" --port "${APP_PORT}" < /dev/null > /tmp/uvicorn.log 2>&1 &
+                        # Use a subshell that exits immediately to fully detach the process
+                        (exec nohup python3 -m uvicorn app.main:app --host "${APP_HOST}" --port "${APP_PORT}" > /tmp/uvicorn.log 2>&1 < /dev/null) &
                         SERVER_PID=$!
+                        # Give the process a moment to fully detach
+                        sleep 1
 
                         # Give server time to start
                         sleep 3
