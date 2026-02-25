@@ -11,8 +11,19 @@ APP_HOST="${3:-0.0.0.0}"
 APP_PORT="${4:-8000}"
 SERVICE_NAME="ec2-provisioner"
 
-# Helper to run systemctl with proper error handling
+# Helper to run systemctl with proper environment setup
 run_systemctl() {
+    # Try to get XDG_RUNTIME_DIR from loginctl if not set
+    if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
+        XDG_RUNTIME_DIR=$(loginctl show-user --property=RuntimePath --value)
+        export XDG_RUNTIME_DIR
+    fi
+
+    # Set DBUS_SESSION_BUS_ADDRESS if needed
+    if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+        export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
+    fi
+
     systemctl --user "$@" 2>&1 || return 1
 }
 
