@@ -60,16 +60,6 @@ pipeline {
                         echo "=================================================="
                         echo ""
 
-                        # Check if already running
-                        if pgrep -f "uvicorn app.main" > /dev/null; then
-                            echo "✗ Server is already running!"
-                            echo ""
-                            pgrep -f "uvicorn app.main"
-                            echo ""
-                            echo "Use 'stop' action to stop it first, or use 'status' to check"
-                            exit 1
-                        fi
-
                         # Activate venv from build job workspace
                         echo "Activating Python environment..."
                         BUILD_WORKSPACE="/var/lib/jenkins/workspace/EC2-Creator-Local/Build-App"
@@ -85,6 +75,7 @@ pipeline {
                         echo ""
 
                         # Use professional process management script
+                        # manage_server.sh is idempotent: succeeds whether starting fresh or already running
                         echo "Starting uvicorn server..."
                         ./scripts/manage_server.sh start "${BUILD_WORKSPACE}" "${APP_HOST}" "${APP_PORT}"
 
