@@ -11,20 +11,22 @@ APP_HOST="${3:-0.0.0.0}"
 APP_PORT="${4:-8000}"
 SERVICE_NAME="ec2-provisioner"
 
-# Helper to run systemctl with proper environment setup
+# Helper to run systemctl - use machine notation for Jenkins environment
 run_systemctl() {
-    # Try to get XDG_RUNTIME_DIR from loginctl if not set
-    if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
-        XDG_RUNTIME_DIR=$(loginctl show-user --property=RuntimePath --value)
-        export XDG_RUNTIME_DIR
-    fi
+    # In Jenkins (no active session), use --machine=jenkins@.host notation
+    # This connects to the user service manager without needing DBus session
+    local cmd="systemctl"
 
-    # Set DBUS_SESSION_BUS_ADDRESS if needed
-    if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -n "${XDG_RUNTIME_DIR:-}" ]; then
-        export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
+    # Check if we have an active session (XDG_RUNTIME_DIR is set)
+    if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+        # Normal user session - use --user
+        $cmd --user "$@" 2>&1 || return 1
+    else
+        # Jenkins environment - use machine notation
+        # Get current user
+        local current_user=$(whoami)
+        $cmd --machine="${current_user}@.host" --user "$@" 2>&1 || return 1
     fi
-
-    systemctl --user "$@" 2>&1 || return 1
 }
 
 # Check if systemd user service is available (check file existence since is-enabled may fail in Jenkins)
