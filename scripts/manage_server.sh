@@ -28,14 +28,16 @@ start_server() {
 
     # Start the process with nohup and proper backgrounding
     # nohup ensures it survives SIGHUP, < /dev/null disconnects stdin
+    # disown prevents job control from terminating the process when bash exits
     nohup python3 -m uvicorn app.main:app \
         --host "$APP_HOST" \
         --port "$APP_PORT" \
         < /dev/null > /tmp/uvicorn.log 2>&1 &
 
-    # Save PID
-    echo $! > "$PID_FILE"
+    # Save PID and disown the process so it survives shell exit
     PID=$!
+    echo $PID > "$PID_FILE"
+    disown $PID
 
     echo "✓ Server started with PID $PID"
 
