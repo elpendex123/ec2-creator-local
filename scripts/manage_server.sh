@@ -12,6 +12,15 @@ APP_PORT="${4:-8000}"
 PID_FILE="/tmp/ec2-provisioner.pid"
 
 start_server() {
+    # Check if port is already in use
+    if lsof -i :"$APP_PORT" > /dev/null 2>&1; then
+        PID=$(lsof -t -i :"$APP_PORT" 2>/dev/null | head -1)
+        echo "✓ Server is already running on port $APP_PORT (PID $PID)"
+        echo "$PID" > "$PID_FILE"
+        return 0
+    fi
+
+    # Check if PID file exists and process is valid
     if [ -f "$PID_FILE" ]; then
         PID=$(cat "$PID_FILE")
         if kill -0 "$PID" 2>/dev/null; then
