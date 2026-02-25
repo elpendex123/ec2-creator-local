@@ -60,8 +60,6 @@ pipeline {
                         echo "=================================================="
                         echo ""
 
-                        # Activate venv from build job workspace
-                        echo "Activating Python environment..."
                         BUILD_WORKSPACE="/var/lib/jenkins/workspace/EC2-Creator-Local/Build-App"
                         BUILD_VENV="${BUILD_WORKSPACE}/.venv"
 
@@ -74,9 +72,15 @@ pipeline {
                         echo "✓ Environment ready from build workspace"
                         echo ""
 
-                        # Use professional process management script
-                        # manage_server.sh is idempotent: succeeds whether starting fresh or already running
-                        echo "Starting uvicorn server..."
+                        # Setup systemd user service if not already done
+                        if ! systemctl --user is-enabled ec2-provisioner >/dev/null 2>&1; then
+                            echo "Setting up systemd user service (first time)..."
+                            ./scripts/setup_systemd_service.sh "${BUILD_WORKSPACE}"
+                            echo ""
+                        fi
+
+                        # Use systemd to start the server
+                        echo "Starting uvicorn server via systemd..."
                         ./scripts/manage_server.sh start "${BUILD_WORKSPACE}" "${APP_HOST}" "${APP_PORT}"
 
                         if [ $? -eq 0 ]; then
