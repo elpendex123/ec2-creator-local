@@ -85,11 +85,14 @@ pipeline {
 
                         echo "Starting uvicorn server..."
                         cd "${BUILD_WORKSPACE}"
-                        # Use a subshell that exits immediately to fully detach the process
-                        (exec nohup python3 -m uvicorn app.main:app --host "${APP_HOST}" --port "${APP_PORT}" > /tmp/uvicorn.log 2>&1 < /dev/null) &
+                        # CRITICAL: Use nohup + disown + unset BUILD_ID combo
+                        # nohup ignores HUP signal when parent exits
+                        # disown removes from job table so Jenkins doesn't track it
+                        # unset BUILD_ID prevents Jenkins from killing children
+                        nohup python3 -m uvicorn app.main:app --host "${APP_HOST}" --port "${APP_PORT}" >/tmp/uvicorn.log 2>&1 &
                         SERVER_PID=$!
-                        # Give the process a moment to fully detach
-                        sleep 1
+                        disown $SERVER_PID 2>/dev/null || disown %1 2>/dev/null || true
+                        sleep 2
 
                         # Give server time to start
                         sleep 3
