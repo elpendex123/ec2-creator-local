@@ -13,16 +13,12 @@ SERVICE_NAME="ec2-provisioner"
 
 # Helper to run systemctl with proper error handling
 run_systemctl() {
-    if systemctl --user "$@" 2>/dev/null; then
-        return 0
-    else
-        # Fallback: try with sudo if systemctl --user fails
-        sudo systemctl --user "$@" 2>/dev/null || return 1
-    fi
+    systemctl --user "$@" 2>&1 || return 1
 }
 
-# Check if systemd user service is available
-if ! run_systemctl is-enabled "$SERVICE_NAME" >/dev/null 2>&1; then
+# Check if systemd user service is available (check file existence since is-enabled may fail in Jenkins)
+SERVICE_FILE="$HOME/.config/systemd/user/${SERVICE_NAME}.service"
+if [ ! -f "$SERVICE_FILE" ]; then
     echo "✗ ERROR: Systemd user service is not set up"
     echo ""
     echo "Please run the setup script first:"
