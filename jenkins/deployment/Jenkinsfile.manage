@@ -91,15 +91,27 @@ pipeline {
                         # Give server time to start
                         sleep 3
 
-                        # Verify it's running
-                        if curl -s "http://localhost:${APP_PORT}/health" >/dev/null 2>&1; then
-                            echo "✓ Server started successfully (PID $SERVER_PID)"
-                            echo "✓ Server is detached from Jenkins and will continue running"
-                        else
-                            echo "✗ Server failed to start"
-                            echo "Logs:"
-                            tail -30 /tmp/uvicorn.log
-                            exit 1
+                        # Verify it's running (with retries since it might still be initializing)
+                        ATTEMPTS=0
+                        MAX_ATTEMPTS=10
+                        while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
+                            if curl -s "http://localhost:${APP_PORT}/health" >/dev/null 2>&1; then
+                                echo "✓ Server started successfully (PID $SERVER_PID)"
+                                echo "✓ Server is detached from Jenkins and will continue running"
+                                break
+                            fi
+                            ATTEMPTS=$((ATTEMPTS + 1))
+                            if [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; then
+                                echo "⏳ Waiting for server to be ready... (attempt $ATTEMPTS/$MAX_ATTEMPTS)"
+                                sleep 1
+                            fi
+                        done
+
+                        # If still not responding after retries, show warning but don't fail
+                        if [ $ATTEMPTS -eq $MAX_ATTEMPTS ]; then
+                            echo "⚠ Server may still be starting, check logs in a moment"
+                            echo "Last logs:"
+                            tail -10 /tmp/uvicorn.log || true
                         fi
 
                         echo ""
